@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: OI Core Services
+
+Parameters:
+  # Application Configuration
+  Tier:
+    Description: Deployment tier
+    Type: String
+    AllowedValues:
+      - dev
+      - qas
+      - preprod
+      - prod
+
+
+Resources:
+  #########################################
+  ############### IAM Role ################
+  #########################################
+  AppRole:
+    Type: AWS::IAM::Role
+    Description: Application IAM role
+    Properties:
+      RoleName: !Sub ${AWS::StackName}
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+                - es.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  S3WritePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3WritePolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:PutObjectAcl
+              - s3:PutOjbectTagging
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub ${OIS3bucket.Arn}
+              - !Sub ${OIS3bucket.Arn}/*
+      Roles:
+        - !Ref AppRole
+    DependsOn:
+      - OIS3bucket
+      - AppRole
+
+  S3ReadPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3ReadPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectTagging
+            Resource:
+              - !Sub ${OIS3bucket.Arn}
+              - !Sub ${OIS3bucket.Arn}/*
+      Roles:
+        - !Ref AppRole
+    DependsOn:
+      - AppRole
+
+
+  #########################################
+  ############## S3 Bucket ################
+  #########################################
+  OIS3bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${Tier}
+      CorsConfiguration:
+        CorsRules:
+          - Id: AllowAllOriginsGET
+            AllowedOrigins: ['*']
+            AllowedMethods: [GET]
+            MaxAge: 3600
+
+  OIS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OIS3bucket
+      PolicyDocument:
+        Statement:
+          # Allow S3 bucket clone from same AWS account via S3 VPC endpoint
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+            Principal:
+              AWS: !Ref AWS::AccountId
+            Resource:
+              - !Sub ${OIS3bucket.Arn}
+              - !Sub ${OIS3bucket.Arn}/*
+          # Allow read access from S3 VPC endpoint
+          - Effect: Allow
+            Action: s3:GetObject
+            Principal: "*"
+            Resource: !Sub ${OIS3bucket.Arn}/*
+
+    DependsOn:
+      - OIS3bucket
+
